@@ -207,14 +207,14 @@
     }
   },
   "class_train": {
-    "file_name": "train.json",
+    "file_name": "customed_train.json",
     "columns": {
       "prompt": "instruction",
       "response": "output"
     }
   },
   "class_eval": {
-    "file_name": "test.json",
+    "file_name": "customed_test.json",
     "columns": {
       "prompt": "instruction",
       "response": "output"
