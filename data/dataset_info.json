@@ -206,6 +206,20 @@
       "response": "output"
     }
   },
+  "class_train": {
+    "file_name": "train.json",
+    "columns": {
+      "prompt": "instruction",
+      "response": "output"
+    }
+  },
+  "class_eval": {
+    "file_name": "test.json",
+    "columns": {
+      "prompt": "instruction",
+      "response": "output"
+    }
+  },
   "webnovel": {
     "hf_hub_url": "zxbsmk/webnovel_cn",
     "ms_hub_url": "AI-ModelScope/webnovel_cn"

@@ -17,9 +17,11 @@
 # limitations under the License.
 
 from dataclasses import dataclass
+import re
 from typing import TYPE_CHECKING, Optional
 
 import numpy as np
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 import torch
 from transformers.utils import is_jieba_available, is_nltk_available
 
@@ -79,6 +81,89 @@ class ComputeAccuracy:
             pred, label = preds[i, :-1], labels[i, 1:]
             label_mask = label != IGNORE_INDEX
             self.score_dict["accuracy"].append(np.mean(pred[label_mask] == label[label_mask]))
+
+        if compute_result:
+            return self._dump()
+        
+@dataclass
+class ComputeClassification:
+    tokenizer: "PreTrainedTokenizer"
+    labels: list[str] = ('行业白皮书', '技术文档', '问答互动', '攻略指南', '学术报告', '知识科普', '文献综述', '社交媒体', '生活指南', '商业提案', '文学创作')
+
+    def _dump(self) -> Optional[dict[str, float]]:
+        result = None
+        if hasattr(self, "score_dict"):
+            result = {k: float(np.mean(v)) for k, v in self.score_dict.items()}
+
+        self.score_dict = {
+            "accuracy": [],
+            "precision_macro": [], "recall_macro": [], "f1_macro": [],
+            "precision_weighted": [], "recall_weighted": [], "f1_weighted": [],
+            "fail": []
+        }
+        self.score_dict.update(
+            {f'precision_{label}': [] for label in self.labels},
+        )
+        self.score_dict.update(
+            {f'recall_{label}': [] for label in self.labels},
+        )
+        self.score_dict.update(
+            {f'f1_{label}': [] for label in self.labels},
+        )
+        return result
+    
+    def __post_init__(self):
+        self._dump()
+
+    def extract_style_label(self, text):
+        """从模型的输出中提取 style_label"""
+        match = re.search(r"<style_label>(.*?)</style_label>", text)
+        if match:
+            _match = match.group(1).strip()
+            if _match in self.labels:
+                return _match
+        return "Unknown"
+    
+    def __call__(self, eval_preds: "EvalPrediction", compute_result: bool = True) -> Optional[dict[str, float]]:
+        preds, labels = numpify(eval_preds.predictions), numpify(eval_preds.label_ids)
+
+        
+
+        preds = np.where(preds != IGNORE_INDEX, preds, self.tokenizer.pad_token_id)
+        labels = np.where(labels != IGNORE_INDEX, labels, self.tokenizer.pad_token_id)\
+
+        decoded_preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
+        decoded_labels = self.tokenizer.batch_decode(labels, skip_special_tokens=True)
+
+        extracted_preds = [self.extract_style_label(pred) for pred in decoded_preds]
+        extracted_labels = [self.extract_style_label(label) for label in decoded_labels]
+
+        fail = len([_ for _ in extracted_preds if _ == "Unknown"]) / len(extracted_preds)
+        self.score_dict["fail"].append(fail)
+
+        accuracy = accuracy_score(extracted_labels, extracted_preds)
+        self.score_dict["accuracy"].append(accuracy)
+        precision_weighted, recall_weighted, f1_weighted, _ = precision_recall_fscore_support(
+            extracted_labels, extracted_preds, average='weighted', labels=self.labels, zero_division=0
+        )
+        self.score_dict["precision_weighted"].append(precision_weighted)
+        self.score_dict["recall_weighted"].append(recall_weighted)
+        self.score_dict["f1_weighted"].append(f1_weighted)
+        precision_macro, recall_macro, f1_macro, _ = precision_recall_fscore_support(
+            extracted_labels, extracted_preds, average='macro', labels=self.labels, zero_division=0
+        )
+        self.score_dict["precision_macro"].append(precision_macro)
+        self.score_dict["recall_macro"].append(recall_macro)
+        self.score_dict["f1_macro"].append(f1_macro)
+
+        precision_per, recall_per, f1_per, support_per = precision_recall_fscore_support(
+            extracted_labels, extracted_preds, average=None, labels=self.labels, zero_division=0
+        )
+
+        for i, label in enumerate(self.labels):
+            self.score_dict[f"precision_{label}"].append(precision_per[i])
+            self.score_dict[f"recall_{label}"].append(recall_per[i])
+            self.score_dict[f"f1_{label}"].append(f1_per[i])
 
         if compute_result:
             return self._dump()
